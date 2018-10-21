@@ -1,147 +1,164 @@
-import functools
+import operator
 
 class Ant:
-	def __init__(self, position, d):
-		self.position = position
-		self.d = d
-		self.index = position
-		self.dead = False
+	def __init__(self, p, r):
+		self.t = 0		  # The local time for the ant
+		self.p = p 		  # The position of the ant
+		self.op = p 	  # The original position
+		self.r = r 		  # True if the ant is headed right
+		self.alive = True # If the ant has fallen off or not
 
-	def right(self):
-		return self.d
-
-	def turnRight(self):
-		self.d = True
-
-	def turnLeft(self):
-		self.d = False
-
-	def move(self, time, L):
-		if self.right():
-			self.position += time
-			if self.position >= L:
-				self.dead = True
-				return True
+	def age(self, t):
+		"""
+		Walk and age the ant t time units. Assumes no obstacles.
+		"""
+		self.t += t
+		if self.r:
+			self.p += t
 		else:
-			self.position -= time
-			if self.position <= 0:
-				self.dead = True
-				return True
-		return False
+			self.p -= t
+
+	def die(self):
+		"""
+		Marks the ant as fallen off the edge (or dead)
+		"""
+		self.alive = False
+
+	def turn(self):
+		self.r = not self.r
 
 	def __str__(self):
-		return "position: " + str(self.position) + ((", going " + ("right" if self.d else "left")) if not self.dead else ", dead")
-
-def customsort(a1, a2):
-	return a1.position - a2.position
+		return 'Ant(' + str(self.op) + " - " + str(self.p) + " @ " + str(self.t) + ", " + ('R' if self.r else 'L') + ')'
 
 def get_ants():
-	tmp = ''
+	"""
+	Reads the ants from stdin
+	"""
 	try:
-		tmp = input().strip().split(' ')
+		line = input().split(' ')
+		L, A = int(line[0]), int(line[1])
+		ants = []
+		for _ in range(A):
+			line = input().split(' ')
+			p, r = int(line[0]), line[1] == 'R'
+			ants.append( Ant(p, r) )
+		# Make sure the ants are in order
+		ants.sort(key=operator.attrgetter('p'))
+		return L, ants
 	except EOFError:
-		return -1, []
-	L = int(tmp[0])
-	A = int(tmp[1])
-	ants = []
-	for _ in range(A):
-		tmp = input().strip().split(' ')
-		position = int(tmp[0])
-		d = tmp[1] == 'R' 
-		ants.append(Ant(position, d))
-	ants = sorted(ants, key=functools.cmp_to_key(customsort))
-	return L, ants
+		pass
+	return None, None
 
-L = 0
-while not L == -1: # For EOF
+def printt(ants):
+	"""
+	Prints the ants array
+	"""
+	ants = [str(a) for a in ants]
+	print(ants)
 
+def is_path_clear(ants, i):
+	"""
+	Determines if the path to the edge is clear or if you have to bump
+	another ant first.
+	"""
+	if ants[i].r:
+		return all(ants[k].r for k in range(i, len(ants)))
+	return all(not ants[k].r for k in range(i))
+
+def distance_to_edge(L, ants, i):
+	"""
+	Returns the distance the i:th ant has left to the edge.
+	"""
+	if ants[i].r:
+		return L - ants[i].p
+	return ants[i].p
+
+def get_neighbour(ants, i):
+	"""
+	Returns the neighbour the ant is looking at.
+	"""
+	if ants[i].r:
+		return i + 1
+	return i - 1
+
+def bump(ants, i, k):
+	"""
+	Bumps the two ants. Assumes they are at the same place in time.
+	"""
+	# Ants will meet at the very middle between them.
+	d = abs(ants[i].p - ants[k].p) / 2
+	# Walk, or age, the ants
+	ants[i].age(d)
+	ants[k].age(d)
+	# Since they bumped into eachother, turn them around
+	ants[i].turn()
+	ants[k].turn()
+
+def sync(ants, i, k):
+	"""
+	Assumes the ants are moving towards eachother.
+	"""
+	diff = ants[i].t - ants[k].t
+	if diff >= 0:
+		# The i:th ant has been alive longer, move other ant
+		ants[k].age(diff)
+	else:
+		ants[i].age(-diff)
+
+def walk(L, ants, i):
+	"""
+	Walks the i:th ant to the edge.
+	"""
+	while ants[i].alive:
+		clear_path = is_path_clear(ants, i)
+		if clear_path:
+			d = distance_to_edge(L, ants, i)
+			ants[i].age(d)
+			ants[i].die()
+			return
+		# We have to bump another ant first
+		neighbour = get_neighbour(ants, i)
+		if ants[neighbour].r == ants[i].r:
+			# We are moving in the same direction and we have to turn the neighbour
+			# around first.
+			walk(L, ants, neighbour)
+		else:
+			# The ants are moving towards eachother, make sure they are
+			# in the same timespan
+			sync(ants, i, neighbour)
+			# Bump the ants
+			bump(ants, i, neighbour)
+
+def get_last_ant(L, ants):
+	for i in range(len(ants)):
+		walk(L, ants, i)
+	for i in reversed(range(len(ants))):
+		walk(L, ants, i)
+
+def get_oldest(ants):
+	"""
+	Returns the oldest ants
+	"""
+	oldest = []
+	for a in ants:
+		if oldest == [] or oldest[0].t <= a.t:
+			if len(oldest) > 0 and oldest[0].t < a.t:
+				oldest = []
+			oldest.append(a)
+	oldest.sort(key=operator.attrgetter('op'))
+	return oldest
+
+while True:
 	L, ants = get_ants()
-	if L != -1:
+	if L is None or ants is None:
+		break
 
-		alive_left = 0
-		alive_right = len(ants) - 1
+	get_last_ant(L, ants)
+	oldest = get_oldest(ants)
 
-		def will_meet(ants, ant1, ant2):
-			return abs(ants[ant1].position - ants[ant2].position) / 2
+	t = oldest[0].t
+	if (t * 1.0).is_integer():
+		t = int(t)
+	op = ' and '.join([ str(a.op) for a in oldest ])
 
-		def move_ants(ants, time, L):
-			global alive_left, alive_right
-			dead = []
-			for i in range(alive_left, alive_right+1):
-				died = ants[i].move(time, L)
-				if died:
-					dead.append(i)
-					if i == alive_left:
-						alive_left += 1
-					else:
-						alive_right -= 1
-			return dead
-
-
-		def turn_ants(ants):
-			global alive_left, alive_right
-			i = alive_left
-			while i < alive_right+1:
-				if i < alive_right:
-					if ants[i].position == ants[i+1].position:
-						ants[i].turnLeft()
-						ants[i+1].turnRight()
-						i += 1 # Skip next one
-
-				i += 1
-
-		def will_walk_off(L, ants):
-			global alive_left, alive_right
-
-			min_time = 200000 # INF
-			min_i = -1
-			
-			i = alive_left
-			while i < alive_right+1:
-
-				# First ant will die
-				if i == alive_left and not ants[i].right():
-					time = ants[i].position
-					if time < min_time:
-						min_time = time
-						min_i = i
-
-				# Last ant will die
-				if i == alive_right and ants[i].right():
-					time = L - ants[i].position
-					if time < min_time:
-						min_time = time
-						min_i = i
-
-				# Two ants will meet eachother
-				if i < alive_right:
-					if ants[i].right() and not ants[i+1].right():
-						time = will_meet(ants, i, i+1)
-						if time < min_time:
-							min_time = time
-							min_i = i
-				if i > alive_left:
-					if not ants[i].right() and ants[i-1].right():
-						time = will_meet(ants, i, i-1)
-						if time < min_time:
-							min_time = time
-							min_i = i
-				i += 1
-
-			# min_time is the first instance where some ants will meet
-			died = move_ants(ants, min_time, L)
-			turn_ants(ants)
-			return died, min_time
-
-		t = []
-		tot_time = 0
-		while alive_left <= alive_right:
-			t, time = will_walk_off(L, ants)
-			tot_time += time
-
-		tot_time = int(tot_time)
-		
-		for i in range(len(t)):
-			t[i] = ants[t[i]].index
-
-		print("The last ant will fall down in " + str(tot_time) + " seconds - started at " + str(t[0]) + ((' and ' + str(t[1]) + '.') if len(t) > 1 else '.'))
+	print("The last ant will fall down in " + str(t) + " seconds - started at " + op + ".")
